@@ -1,23 +1,31 @@
 package com.mobinjam.beaconradar
 
 import android.Manifest
+import android.bluetooth.BluetoothClass
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.google.accompanist.permissions.*
 import com.mobinjam.beaconradar.data.ble.BleScanner
+// نام AppDatabase را در صورت نیاز با نام دیتابیس خود جایگزین کنید
 import com.mobinjam.beaconradar.data.local.AppDatabase
 import com.mobinjam.beaconradar.data.local.entity.DeviceEntity
 import com.mobinjam.beaconradar.presentation.RadarViewModel
@@ -26,18 +34,16 @@ import com.mobinjam.beaconradar.presentation.components.RadarView
 import com.mobinjam.beaconradar.ui.theme.BeaconRadarTheme
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.pow
 
 class MainActivity : ComponentActivity() {
-
-    @OptIn(ExperimentalPermissionsApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Manual Dependency Injection: Instantiate core components
-        // Note: For large-scale production apps, frameworks like Hilt or Koin are recommended.
         val database = AppDatabase.getDatabase(applicationContext)
-        val bleScanner = BleScanner(applicationContext, database.deviceDao())
-        val factory = RadarViewModelFactory(bleScanner, database.deviceDao())
+        val deviceDao = database.deviceDao()
+        val bleScanner = BleScanner(applicationContext, deviceDao)
+        val factory = RadarViewModelFactory(bleScanner, deviceDao)
 
         setContent {
             BeaconRadarTheme {
@@ -45,48 +51,41 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    val viewModel: RadarViewModel = viewModel(factory = factory)
-
-                    // Define required permissions based on Android version
-                    val permissionsToRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        listOf(
-                            Manifest.permission.BLUETOOTH_SCAN,
-                            Manifest.permission.BLUETOOTH_CONNECT,
-                            Manifest.permission.ACCESS_FINE_LOCATION,
-                            Manifest.permission.ACCESS_COARSE_LOCATION
-                        )
-                    } else {
-                        listOf(
-                            Manifest.permission.ACCESS_FINE_LOCATION,
-                            Manifest.permission.ACCESS_COARSE_LOCATION
-                        )
-                    }
-
-                    val multiplePermissionsState = rememberMultiplePermissionsState(permissionsToRequest)
-
-                    // UI Routing based on permission state
-                    if (multiplePermissionsState.allPermissionsGranted) {
-                        RadarScreen(viewModel = viewModel)
-                    } else {
-                        PermissionScreen(permissionState = multiplePermissionsState)
-                    }
+                    val radarViewModel: RadarViewModel = viewModel(factory = factory)
+                    RadarScreen(viewModel = radarViewModel)
                 }
             }
         }
     }
 }
 
-// یادتان نرود ایمپورت زیر را به بالای فایل MainActivity.kt اضافه کنید:
-// import com.mobinjam.beaconradar.presentation.components.RadarView
-
 @Composable
 fun RadarScreen(viewModel: RadarViewModel) {
     val devices by viewModel.scannedDevices.collectAsState()
     var isScanning by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    // لیست مجوزهای مورد نیاز بر اساس نسخه اندروید
+    val permissionsToRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+    } else {
+        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+    }
+
+    // سیستم درخواست مجوز از کاربر در لحظه
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.values.all { it }
+        if (allGranted) {
+            isScanning = true
+            viewModel.startRadar()
+        } else {
+            Toast.makeText(context, "برای فعالیت رادار، مجوز بلوتوث الزامی است", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
-
-        // پنل رادار بصری (جدید)
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -98,12 +97,10 @@ fun RadarScreen(viewModel: RadarViewModel) {
                 modifier = Modifier.padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // صدا زدن کامپوزیت راداری که ساختیم
                 RadarView(devices = devices)
             }
         }
 
-        // دکمه‌های کنترل
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -112,8 +109,8 @@ fun RadarScreen(viewModel: RadarViewModel) {
         ) {
             Button(
                 onClick = {
-                    isScanning = true
-                    viewModel.startRadar()
+                    // قبل از شروع اسکن، ابتدا مجوزها را چک می‌کند
+                    permissionLauncher.launch(permissionsToRequest)
                 },
                 enabled = !isScanning
             ) {
@@ -138,7 +135,6 @@ fun RadarScreen(viewModel: RadarViewModel) {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // لیست متنی دستگاه‌ها در پایین صفحه
         LazyColumn(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -149,23 +145,74 @@ fun RadarScreen(viewModel: RadarViewModel) {
         }
     }
 }
+
+fun calculateDistance(rssi: Int): Double {
+    val txPower = -59.0
+    val n = 2.5
+    return 10.0.pow((txPower - rssi) / (10 * n))
+}
+
+fun getDeviceIcon(deviceType: Int?): ImageVector {
+    if (deviceType == null) return Icons.Default.Bluetooth
+
+    return when (deviceType) {
+        BluetoothClass.Device.PHONE_SMART, BluetoothClass.Device.PHONE_CELLULAR -> Icons.Default.Smartphone
+        BluetoothClass.Device.COMPUTER_LAPTOP, BluetoothClass.Device.COMPUTER_DESKTOP -> Icons.Default.Computer
+        BluetoothClass.Device.AUDIO_VIDEO_HEADPHONES, BluetoothClass.Device.AUDIO_VIDEO_WEARABLE_HEADSET -> Icons.Default.Headphones
+        BluetoothClass.Device.AUDIO_VIDEO_LOUDSPEAKER -> Icons.Default.Speaker
+        BluetoothClass.Device.WEARABLE_WRIST_WATCH -> Icons.Default.Watch
+        BluetoothClass.Device.AUDIO_VIDEO_SET_TOP_BOX, BluetoothClass.Device.AUDIO_VIDEO_VIDEO_DISPLAY_AND_LOUDSPEAKER -> Icons.Default.Tv
+        else -> Icons.Default.Bluetooth
+    }
+}
+
 @Composable
 fun DeviceItem(device: DeviceEntity) {
-    // Format the timestamp to a readable time format
     val formatter = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
     val lastSeenTime = formatter.format(Date(device.lastSeen))
+    val distance = calculateDistance(device.rssi)
+    val distanceText = String.format(Locale.US, "%.1f m", distance)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = device.deviceName ?: "Unknown Device",
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.bodyLarge
-            )
-            Spacer(modifier = Modifier.height(4.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = getDeviceIcon(device.deviceType),
+                        contentDescription = "Device Icon",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    Text(
+                        text = device.deviceName ?: "Unknown Device",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+
+                if (device.manufacturer != null) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            text = device.manufacturer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
             Text(text = "MAC: ${device.macAddress}", style = MaterialTheme.typography.bodyMedium)
 
             Row(
@@ -175,38 +222,12 @@ fun DeviceItem(device: DeviceEntity) {
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Signal: ${device.rssi} dBm",
-                    color = if (device.rssi > -60) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+                    text = "${device.rssi} dBm  (≈ $distanceText)",
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (device.rssi > -75) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary
                 )
-                Text(text = "Last seen: $lastSeenTime")
+                Text(text = "Last: $lastSeenTime", style = MaterialTheme.typography.bodySmall)
             }
-        }
-    }
-}
-
-@OptIn(ExperimentalPermissionsApi::class)
-@Composable
-fun PermissionScreen(permissionState: MultiplePermissionsState) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            text = "Permissions Required",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = "BeaconRadar needs Bluetooth and Location permissions to detect nearby devices.",
-            style = MaterialTheme.typography.bodyLarge
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        Button(onClick = { permissionState.launchMultiplePermissionRequest() }) {
-            Text("Grant Permissions")
         }
     }
 }

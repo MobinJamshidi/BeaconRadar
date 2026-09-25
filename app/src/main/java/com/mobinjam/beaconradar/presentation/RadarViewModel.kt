@@ -6,9 +6,12 @@ import androidx.lifecycle.viewModelScope
 import com.mobinjam.beaconradar.data.ble.BleScanner
 import com.mobinjam.beaconradar.data.local.dao.DeviceDao
 import com.mobinjam.beaconradar.data.local.entity.DeviceEntity
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class RadarViewModel(
@@ -16,7 +19,7 @@ class RadarViewModel(
     private val deviceDao: DeviceDao
 ) : ViewModel() {
 
-    // Converts the Room database Flow into a StateFlow for the Compose UI to observe in real-time
+    // تبدیل اطلاعات دیتابیس به جریانی زنده برای رابط کاربری
     val scannedDevices: StateFlow<List<DeviceEntity>> = deviceDao.getAllDevices()
         .stateIn(
             scope = viewModelScope,
@@ -24,12 +27,26 @@ class RadarViewModel(
             initialValue = emptyList()
         )
 
+    private var cleanupJob: Job? = null
+
     fun startRadar() {
         bleScanner.startScanning()
+
+        // راه‌اندازی سیستم پاکسازی خودکار (Garbage Collector)
+        cleanupJob = viewModelScope.launch {
+            while (isActive) {
+                delay(3000) // هر 3 ثانیه دیتابیس را چک می‌کند
+
+                // دستگاه‌هایی که در 15 ثانیه گذشته دیده نشده‌اند را شناسایی کن
+                val timeThreshold = System.currentTimeMillis() - 15000
+                deviceDao.deleteOldDevices(timeThreshold)
+            }
+        }
     }
 
     fun stopRadar() {
         bleScanner.stopScanning()
+        cleanupJob?.cancel() // توقف سیستم پاکسازی وقتی رادار خاموش است
     }
 
     fun clearLog() {
@@ -39,7 +56,7 @@ class RadarViewModel(
     }
 }
 
-// Factory required to inject dependencies (BleScanner, DeviceDao) into the ViewModel
+// فکتوری برای ساخت ویومدل
 class RadarViewModelFactory(
     private val bleScanner: BleScanner,
     private val deviceDao: DeviceDao

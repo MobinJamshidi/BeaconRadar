@@ -14,6 +14,10 @@ interface DeviceDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertDevice(device: DeviceEntity)
 
+    // این دستور تمام دستگاه‌هایی که از یک زمان خاص قدیمی‌تر هستند را پاک می‌کند
+    @Query("DELETE FROM scanned_devices WHERE lastSeen < :timeThreshold")
+    suspend fun deleteOldDevices(timeThreshold: Long)
+
     // دریافت لیست تمام دستگاه‌ها به صورت زنده (مرتب‌شده بر اساس آخرین بازدید)
     @Query("SELECT * FROM scanned_devices ORDER BY lastSeen DESC")
     fun getAllDevices(): Flow<List<DeviceEntity>>
