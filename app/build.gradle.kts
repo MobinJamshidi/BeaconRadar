@@ -28,10 +28,18 @@ android {
             )
         }
     }
+
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
+
+    // --- این بخش اضافه شد تا کاتلین و KSP هماهنگ شوند ---
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+    // ----------------------------------------------------
+
     buildFeatures {
         compose = true
     }
@@ -46,7 +54,6 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-
 
     // Room Database
     implementation(libs.androidx.room.runtime)

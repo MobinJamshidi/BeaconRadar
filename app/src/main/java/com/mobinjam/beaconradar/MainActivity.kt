@@ -12,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -21,6 +22,7 @@ import com.mobinjam.beaconradar.data.local.AppDatabase
 import com.mobinjam.beaconradar.data.local.entity.DeviceEntity
 import com.mobinjam.beaconradar.presentation.RadarViewModel
 import com.mobinjam.beaconradar.presentation.RadarViewModelFactory
+import com.mobinjam.beaconradar.presentation.components.RadarView
 import com.mobinjam.beaconradar.ui.theme.BeaconRadarTheme
 import java.text.SimpleDateFormat
 import java.util.*
@@ -74,63 +76,69 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// یادتان نرود ایمپورت زیر را به بالای فایل MainActivity.kt اضافه کنید:
+// import com.mobinjam.beaconradar.presentation.components.RadarView
+
 @Composable
 fun RadarScreen(viewModel: RadarViewModel) {
-    // Observe the database state in real-time
     val devices by viewModel.scannedDevices.collectAsState()
     var isScanning by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Top Control Panel
+
+        // پنل رادار بصری (جدید)
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            colors = CardDefaults.cardColors(containerColor = Color.Black),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(
-                    text = "Beacon Radar Control",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    Button(
-                        onClick = {
-                            isScanning = true
-                            viewModel.startRadar()
-                        },
-                        enabled = !isScanning
-                    ) {
-                        Text("Start Scan")
-                    }
-
-                    Button(
-                        onClick = {
-                            isScanning = false
-                            viewModel.stopRadar()
-                        },
-                        enabled = isScanning,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        Text("Stop Scan")
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                TextButton(onClick = { viewModel.clearLog() }) {
-                    Text("Clear Database Log")
-                }
+                // صدا زدن کامپوزیت راداری که ساختیم
+                RadarView(devices = devices)
             }
         }
 
-        // Live Device List
+        // دکمه‌های کنترل
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            Button(
+                onClick = {
+                    isScanning = true
+                    viewModel.startRadar()
+                },
+                enabled = !isScanning
+            ) {
+                Text("Start Scan")
+            }
+
+            Button(
+                onClick = {
+                    isScanning = false
+                    viewModel.stopRadar()
+                },
+                enabled = isScanning,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) {
+                Text("Stop Scan")
+            }
+
+            OutlinedButton(onClick = { viewModel.clearLog() }) {
+                Text("Clear")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // لیست متنی دستگاه‌ها در پایین صفحه
         LazyColumn(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -141,7 +149,6 @@ fun RadarScreen(viewModel: RadarViewModel) {
         }
     }
 }
-
 @Composable
 fun DeviceItem(device: DeviceEntity) {
     // Format the timestamp to a readable time format
